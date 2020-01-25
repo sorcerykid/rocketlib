@@ -44,7 +44,7 @@ function decode_node_pos( node_idx, idx )
 	local pos = idx and decode_pos( idx ) or { x = 0, y = 0, z = 0 }
 	local node_pos = { }
 
-	node_idx = node_idx - 1		-- correct for one-based indexing used in node_list
+	node_idx = node_idx - 1		-- correct for one-based indexing of node_list
 
 	node_pos.x = ( node_idx % 16 ) + pos.x * 16
 	node_idx = floor( node_idx / 16 )
@@ -62,9 +62,9 @@ function encode_node_pos( node_pos )
 		z = floor( node_pos.z / 16 )
 	}
 	local x = node_pos.x % 16
-	local y = node_pos.x % 16
-	local z = node_pos.x % 16
-	return x + y * 16 + z * 256, encode_pos( pos )
+	local y = node_pos.y % 16
+	local z = node_pos.z % 16
+	return x + y * 16 + z * 256 + 1, encode_pos( pos )	-- correct for one-based indexing of node_list
 end
 
 local function is_match( text, glob )
@@ -167,6 +167,38 @@ function BlobReader( input )
 	end
 	return self
 end
+
+-----------------------------
+-- MetaDataRef Class
+-----------------------------
+
+--[[function MetaDataRef( block )
+        -- usage: MetaDataRef( block ).get_string( 5, "infotext" )
+        -- same as block.get_nodemeta_map( )[ 5 ].fields.infotext
+        -- first is more efficient for multiple lookups since it caches nodemeta
+	-- but second if fine for just a single lookup
+
+	local self = { }
+        local nodemeta_map = block.get_nodemeta_map( )
+
+	self.exists = function ( off, key )
+		return nodemeta_map[ off ].fields[ key ] ~= nil
+	end
+        self.get_string = function ( off, key )
+		return tostring( nodemeta_map[ off ].fields[ key ] ) or ""
+        end
+        self.get_int = function ( key )
+		return tonumber( nodemeta_map[ off ].fields[ key ] ) or 0
+	end
+        self.get_float = function ( key )
+		return tonumber( nodemeta_map[ off ].fields[ key ] ) or 0
+        end
+        self.to_table = function ( )
+                return { fields = fields, inventory = inventory }
+        end
+
+	return self
+end]]
 
 -----------------------------
 -- Deserializer Routines
@@ -391,7 +423,7 @@ function MapArea( pos1, pos2 )
 		return true
 	end
 
-	self.iterate = function ( )
+	self.iterator = function ( )
 		local x
 		local y = y1
 		local z = z1
