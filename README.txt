@@ -1,4 +1,4 @@
-RocketLib Toolkit v1.1
+RocketLib Toolkit v1.2
 By Leslie E. Krause
 
 RocketLib Toolkit is a purely Lua-driven SQLite3 map reader with an extensive API for 
@@ -8,23 +8,23 @@ but anybody with Lua programming experience can develop their own command-line t
 Just to showcase how easy it is to get started examining your map database, it takes only 
 15 lines of Lua code to search for all mapblocks that have dropped items:
 
-   require( "maplib" )
-
-   local map_db = MapDatabase( "~/.minetest/worlds/world/map.sqlite", false )
-
-   for index, block in map_db.iterate( ) do
-           local count = 0
-           for i, v in ipairs( block.object_list ) do
-                   if v.name == "__builtin:item" then
-                           count = count + 1
-                   end
-           end
-           if count > 0 then
-                   print( string.format( "%d dropped items in mapblock (%s)", 
-                           count, index_to_string( index )
-                   ) )
-           end
-   end
+>  require( "maplib" )
+>
+>  local map_db = MapDatabase( "/home/minetest/worlds/world/map.sqlite", false )
+>
+>  for index, block in map_db.iterate( ) do
+>          local count = 0
+>          for i, v in ipairs( block.object_list ) do
+>                  if v.name == "__builtin:item" then
+>                          count = count + 1
+>                  end
+>          end
+>          if count > 0 then
+>                  print( string.format( "%d dropped items in mapblock (%s)", 
+>                          count, pos_to_string( decode_pos( index ) )
+>                  ) )
+>          end
+>  end
 
 Important: If your map database exceeds 1GB in size, then a RAM-disk (tmpfs on Linux) is 
 strongly recommended for optimal performance. Based on personal experience, there can be
@@ -102,7 +102,7 @@ The available class constructors are as follows:
 
    MapBlock( blob, is_preview, get_checksum )
    Parses the mapblock data and calculates the associated checksum. For efficiency, the 
-   nodemeta list and the node list are not parsed automatically, but they can be obtained 
+   nodemeta map and the node list are not parsed automatically, but they can be obtained 
    using the corresponding methods.
 
     * blob is the raw mapblock data obtained from "data" field of the "blocks" table
@@ -124,7 +124,7 @@ The available class constructors are as follows:
       cross-reference the content ID to determine the actual registered node name.
 
       MapBlock::get_nodemeta_map( )
-      Parses the raw nodemeta list and returns a nodemata_list table.
+      Parses the raw nodemeta map and returns a nodemata_map table.
 
       The nodemeta_map table is an associative array indexed by the position hash of 
       the corresponding node from the node_list table. Each entry of the nodemeta_list 
@@ -232,7 +232,7 @@ The available class constructors are as follows:
       of the BLOB.
 
       MapDatabase::get_mapblock_raw( index, get_checksum )
-      Returns the mapblock as a BLOB, without calculating the checksum.
+      Returns the mapblock data as a BLOB, without calculating the length or checksum.
 
       MapDatabase::close( index, get_checksum )
       Closes the map database (but it doesn't close the cache database, which is a known 
@@ -241,23 +241,20 @@ The available class constructors are as follows:
 Several helper functions are also available for debugging and conversion purposes.
 
    decode_pos( index )
-   Converts the given mapblock hashed position to a vector position.
+   Converts the given mapblock hashed position to a vector position (x,y,z).
 
    encode_pos( pos )
-   Converts the given mapblock vector position to a hashed position.
+   Converts the given mapblock vector position (x,y,z) to a hashed position.
 
    decode_node_pos( node_index, index )
-   Converts the given node index within the given mapblock to a vector position in world 
-   coordinates. If the index parameter is not provided, then the result will be relative 
-   to a mapblock at {0,0,0}. Note: For consistency with Lua conventions, node indexes 
-   are always 1-based.
+   Converts the given node index and corresponding mapblock hashed position to a node 
+   vector position in world coordinates. If the index parameter is not provided, then the 
+   result will be relative to the mapblock at (0,0,0). Note: For consistency with Lua 
+   conventions, node indexes are always 1-based.
 
    encode_node_pos( node_pos )
-   Converts the given node vector position into a both a node index and mapblock hashed 
-   position.
-
-   encode_pos( pos )
-   Converts the given mapblock vector position to a hashed position.
+   Converts the given node vector position in world coordinates to a 1-based node index 
+   and a corresponding mapblock hashed position.
 
    pos_to_string( pos )
    Returns a string representing the given vector position as "x,y,z".
