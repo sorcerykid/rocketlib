@@ -9,85 +9,16 @@ package.cpath = package.cpath .. ";/usr/local/lib/lua/5.1/?.so"
 
 local zlib = require( "zlib" )				-- https://luarocks.org/modules/brimworks/lua-zlib
 local sqlite3 = require( "lsqlite3complete" )		-- https://luarocks.org/modules/dougcurrie/lsqlite3
+local dofile( "helpers.lua" )
 
 -----------------------------
--- Conversion Routines
------------------------------
 
-local floor = math.floor
-local ceil = math.ceil
-local max = math.max
-local min = math.min
-local byte = string.byte
-local match = string.match
-local find = string.find
-local sub = string.sub
-
-local function to_signed( val )
-	return val < 2048 and val or val - 2 * 2048
-end
-
-function decode_pos( idx )
-	local x = to_signed( idx % 4096 )
-	idx = floor( ( idx - x ) / 4096 )
-	local y = to_signed( idx % 4096 )
-	idx = floor( ( idx - y ) / 4096 )
-	local z = to_signed( idx % 4096 )
-	return { x = x, y = y, z = z }
-end
-
-function encode_pos( pos )
-	return pos.x + pos.y * 4096 + pos.z * 16777216
-end
-
-function decode_node_pos( node_idx, idx )
-	local pos = idx and decode_pos( idx ) or { x = 0, y = 0, z = 0 }
-	local node_pos = { }
-
-	node_idx = node_idx - 1		-- correct for one-based indexing of node_list
-
-	node_pos.x = ( node_idx % 16 ) + pos.x * 16
-	node_idx = floor( node_idx / 16 )
-	node_pos.y = ( node_idx % 16 ) + pos.y * 16
-	node_idx = floor( node_idx / 16 )
-	node_pos.z = ( node_idx % 16 ) + pos.z * 16
-
-	return node_pos
-end
-
-function encode_node_pos( node_pos )
-	local pos = {
-		x = floor( node_pos.x / 16 ),
-		y = floor( node_pos.y / 16 ),
-		z = floor( node_pos.z / 16 )
-	}
-	local x = node_pos.x % 16
-	local y = node_pos.y % 16
-	local z = node_pos.z % 16
-	return x + y * 16 + z * 256 + 1, encode_pos( pos )	-- correct for one-based indexing of node_list
-end
+local _
 
 local function is_match( text, glob )
 	-- use array for captures
 	_ = { match( text, glob ) }
 	return #_ > 0 and _ or nil
-end
-
------------------------------
--- Debugging Routines
------------------------------
-
-function pos_to_string( pos )
-	return string.format( "(%d,%d,%d)", pos.x, pos.y, pos.z )
-end
-
-function dump( buffer )
-	for i = 1, ceil( #buffer / 16 ) * 16 do
-		if ( i - 1 ) % 16 == 0 then io.write( string.format( '%08X   ', i - 1 ) ) end
-		io.write( i > #buffer and '   ' or string.format( '%02x ', buffer:byte( i ) ) )
-		if i % 8 == 0 then io.write( ' ' ) end
-		if i % 16 == 0 then io.write( buffer:sub( i - 16 + 1, i ):gsub( '%c', '.' ), '\n' ) end
-	end
 end
 
 -----------------------------
