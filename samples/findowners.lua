@@ -16,12 +16,19 @@
 -- cubic mapblocks at a time.
 --------------------------------------------------------------------------------
 
-dofile( "../maplib.lua" )
+package.path = "/home/minetest/maplib/?.lua;" .. package.path
 
-local path = "/home/minetest/.minetest/worlds/world/map.sqlite"
-local area = MapArea( { x = -25, y = -10, z = -25 }, { x = 25, y = 5, z = 25 } )
+local maplib = require "maplib"
+
+local path = "/root/.minetest/worlds/world/map.sqlite"
+local area = MapArea( { x = -10, y = -10, z = -10 }, { x = 10, y = 5, z = 10 } )
 local node_name = nil
 local node_owner = "sorcerykid"
+
+---------------------------------------
+
+local decode_node_pos = maplib.decode_node_pos
+local pos_to_string = maplib.pos_to_string
 
 local map_db = MapDatabase( path, false )
 print( "Creating cache..." )
@@ -32,29 +39,29 @@ local block_total = 0
 local node_count = 0
 
 for index, block in map_db.iterate_area( area ) do
-        local nodemeta_map = block.get_nodemeta_map( )
-        local nodename_map = block.nodename_map
-        local node_list
+	local nodemeta_map = block.get_nodemeta_map( )
+	local nodename_map = block.nodename_map
+	local node_list
 
-        -- don't waste cpu cycles getting nodes unless there is meta
-        if next( nodemeta_map ) then
-                node_list = block.get_node_list( )
-        end
+	-- don't waste cpu cycles getting nodes unless there is meta
+	if next( nodemeta_map ) then
+		node_list = block.get_node_list( )
+	end
 
-        block_total = block_total + 1
+	block_total = block_total + 1
 
-        for i, m in pairs( nodemeta_map ) do
-                local name = nodename_map[ node_list[ i ].id ]
-                local owner = m.fields.owner or m.fields.doors_owner
+	for i, m in pairs( nodemeta_map ) do
+		local name = nodename_map[ node_list[ i ].id ]
+		local owner = m.fields.owner or m.fields.doors_owner
 
-                if owner and ( not node_owner or owner == node_owner ) and ( not node_name or name == node_name ) then
-                        node_count = node_count + 1
+		if owner and ( not node_owner or owner == node_owner ) and ( not node_name or name == node_name ) then
+			node_count = node_count + 1
 
-                        print( string.format( "%s owned by %s at (%s).",
-                                name, owner, pos_to_string( decode_node_pos( i, index ) )
-                        ) )
-                end
-        end
+			print( string.format( "%s owned by %s at %s.",
+				name, owner, pos_to_string( decode_node_pos( i, index ) )
+			) )
+		end
+	end
 end
 
 print( string.format( "Found %d owned nodes (scanned %d map blocks).", node_count, block_total ) )

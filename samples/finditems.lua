@@ -24,10 +24,12 @@
 -- and node_list as necessary.
 --------------------------------------------------------------------------------
 
-dofile( "../maplib.lua" )
+package.path = "/home/minetest/maplib/?.lua;" .. package.path
 
-local source_path = "/home/minetest/.minetest/worlds/world/map.sqlite"
-local search_area = MapArea( { x = -100, y = -5, z = -100 }, { x = 100, y = 2, z = 100 } )
+local maplib = require "maplib"
+
+local source_path = "/home/minetest/.minetest/worlds/test/map.sqlite"
+local search_area = MapArea( { x = -10, y = -5, z = -10 }, { x = 10, y = 2, z = 10 } )
 local search_items = {
 	["default:pick_diamond"] = 0,
 	["default:mese"] = 0,
@@ -35,16 +37,21 @@ local search_items = {
 	["default:steelblock"] = 0,
 	["default:steel_ingot"] = 0,
 	["default:gold_ingot"] = 0,
-	["nyancat:nyancat"] = 0,	
+	["nyancat:nyancat"] = 0,
 }
 local is_placed = false
 local is_stored = true
 local containers = {
+	["bones:bones"] = true,
 	["default:chest"] = true,
 	["default:chest_locked"] = true,
+	["protector:chest"] = true,
 }
 
 ---------------------------------------
+
+local decode_node_pos = maplib.decode_node_pos
+local pos_to_string = maplib.pos_to_string
 
 local function has_containers( block )
 	if is_stored then
@@ -75,10 +82,10 @@ local function stored_items_search( block, index, node_list, nodename_map )
         for pos, meta in pairs( nodemeta_map ) do
 	        local node_name = nodename_map[ node_list[ pos ].id ]
 
-		if containers[ node_name ] then
-			for idx, slot in ipairs( meta.inventory ) do
-				local item_name = slot.item_name
-				local item_count = slot.item_count
+		if containers[ node_name ] and meta.inventory.main then
+			for idx, slot in ipairs( meta.inventory.main ) do
+				local item_name = slot.name
+				local item_count = slot.count
 
 				if search_items[ item_name ] then
 					is_found = true

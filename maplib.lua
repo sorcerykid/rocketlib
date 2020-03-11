@@ -9,11 +9,21 @@ package.cpath = package.cpath .. ";/usr/local/lib/lua/5.1/?.so"
 
 local zlib = require( "zlib" )				-- https://luarocks.org/modules/brimworks/lua-zlib
 local sqlite3 = require( "lsqlite3complete" )		-- https://luarocks.org/modules/dougcurrie/lsqlite3
-local dofile( "helpers.lua" )
+local helpers = require( "helpers" )
 
 -----------------------------
 
-local _
+local decode_pos = helpers.decode_pos
+
+local floor = math.floor
+local ceil = math.ceil
+local max = math.max
+local min = math.min
+local byte = string.byte
+local match = string.match
+local find = string.find
+local sub = string.sub
+local _ = { }
 
 local function is_match( text, glob )
 	-- use array for captures
@@ -100,38 +110,6 @@ function BlobReader( input )
 end
 
 -----------------------------
--- MetaDataRef Class
------------------------------
-
---[[function MetaDataRef( block )
-        -- usage: MetaDataRef( block ).get_string( 5, "infotext" )
-        -- same as block.get_nodemeta_map( )[ 5 ].fields.infotext
-        -- first is more efficient for multiple lookups since it caches nodemeta
-	-- but second if fine for just a single lookup
-
-	local self = { }
-        local nodemeta_map = block.get_nodemeta_map( )
-
-	self.exists = function ( off, key )
-		return nodemeta_map[ off ].fields[ key ] ~= nil
-	end
-        self.get_string = function ( off, key )
-		return tostring( nodemeta_map[ off ].fields[ key ] ) or ""
-        end
-        self.get_int = function ( key )
-		return tonumber( nodemeta_map[ off ].fields[ key ] ) or 0
-	end
-        self.get_float = function ( key )
-		return tonumber( nodemeta_map[ off ].fields[ key ] ) or 0
-        end
-        self.to_table = function ( )
-                return { fields = fields, inventory = inventory }
-        end
-
-	return self
-end]]
-
------------------------------
 -- Deserializer Routines
 -----------------------------
 
@@ -158,7 +136,7 @@ local function parse_nodemeta_map( blob )
 
 	local version = p.read_u8( )
 	if version == 0 then
-		return this
+		return this, 0
 	elseif version > 3 then
 		error( "Unsupported node_metadata version, aborting!" )
 	end
@@ -168,31 +146,44 @@ local function parse_nodemeta_map( blob )
 		local pos = p.read_u16( ) + 1		-- use one-based indexing to correspond with node_list array
 		local var_total = p.read_u32( )
 
-		this[ pos ] = { fields = { }, inventory = { }, is_private = false }
+		this[ pos ] = { fields = { }, inventory = { }, privacy = { } }
 
 		for var_count = 1, var_total do
 			local key = p.read_string( p.read_u16( ) )	-- 16-bit length string
 			local value = p.read_string( p.read_u32( ) )	-- 32-bit length string
+			local is_private = version >= 2 and ( p.read_u8( ) == 1 ) or false
+
 			this[ pos ].fields[ key ] = value
+			if is_private then
+				table.insert( this[ pos ].privacy, key )
+			end
 		end
-		if version >= 2 then
-			this[ pos ].is_private = ( p.read_u8( ) == 1 )
-		end
+
+		local list
 		for inv_count = 1, 127 do
 			local text = p.read_string( )
 
-			if text == "EndInventory" then
-				break
-			end
-
-			if is_match( text, "^Item ([a-zA-Z0-9_]+:[a-zA-Z_]+)$" ) or is_match( text, "^Item ([a-zA-Z0-9_]+:[a-zA-Z0-9_]+) (%d+)" ) then
-				table.insert( this[ pos ].inventory, { item_name = _[ 1 ], item_count = tonumber( _[ 2 ] ) or 1 } )
+			if is_match( text, "^List (%S+) %d+" ) then
+				list = { }
+				this[ pos ].inventory[ _[ 1 ] ] = list
 			elseif text == "Empty" then
-				table.insert( this[ pos ].inventory, { } )	-- empty item stack
+				table.insert( list, { } )
+			elseif is_match( text, "^Item (%S+)$" ) or is_match( text, "^Item (%S+) (%d+)$" ) or is_match( text, "^Item (%S+) (%d+) (%d+)$" ) or is_match( text, "^Item (%S+) (%d+) (%d+) (.+)$" ) then
+				table.insert( list, {
+					name = _[ 1 ],
+					count = tonumber( _[ 2 ] ) or 1,
+					wear = tonumber( _[ 3 ] ) or 0,
+					metadata = _[ 4 ] or "",
+				} )
+			elseif text == "EndInventoryList" then
+				list = nil
+			elseif text == "EndInventory" then
+				break
 			end
 		end
 	end
-	return this
+
+	return this, node_total
 end
 
 local function parse_object( blob )
@@ -208,6 +199,7 @@ local function parse_object( blob )
 		this.velocity = p.read_f1000( ) / 10
 		this.yaw = p.read_f1000( ) / 10		
 	end
+
 	return this
 end
 
@@ -306,11 +298,55 @@ function MapBlock( blob, is_preview, get_checksum )
 end
 
 -----------------------------
+-- NodeMetaRef Class
+-----------------------------
+
+function NodeMetaRef( block )
+	local self = { }
+	local nodemeta_map, length = block.get_nodemeta_map( )
+
+	self.length = length
+
+	self.is_private = function ( idx, key )
+		for i, v in ipairs( nodemeta_map[ idx ].privacy ) do
+			if v == key then return true end
+		end
+		return false
+	end
+	self.contains = function ( idx, key )
+		return nodemeta_map[ idx ].fields[ key ] ~= nil
+	end
+	self.get_raw = function ( idx, key )
+		local this = nodemeta_map[ idx ]
+		return this and this.fields[ key ]
+	end
+	self.get_string = function ( idx, key )
+		return self.get_raw( idx, key ) or ""
+	end
+	self.get_float = function ( idx, key )
+		return tonumber( self.get_raw( idx, key ) ) or 0
+	end
+	self.get_int = function ( idx, key )
+		local val = tonumber( self.get_raw( idx, key ) ) or 0
+		return val > 0 and math.floor( val ) or math.ceil( val )
+	end
+	self.to_table = function ( idx )
+		local this = nodemeta_map[ idx ]
+		return this and { fields = this.fields, inventory = this.inventory } or { fields = { }, inventory = { } }
+	end
+	self.iterate = function ( )
+		return next, nodemeta_map, nil
+	end
+
+	return self
+end
+
+-----------------------------
 -- MapArea Class
 -----------------------------
 
 function MapArea( pos1, pos2 )
-        local self = { }
+	local self = { }
 
 	-- presort positions and clamp to designated boundaries
 	local x1 = max( min( pos1.x, pos2.x ), -2048 )
@@ -345,7 +381,7 @@ function MapArea( pos1, pos2 )
 		if z < z1 or z > z2 then return false end
 
 		return true
-        end
+	end
 
 	self.has_pos = function ( pos )
 		if pos.x < x1 or pos.x > x2 or pos.y < y1 or pos.y > y2 or pos.z < z1 or pos.z > z2 then
@@ -377,18 +413,18 @@ function MapArea( pos1, pos2 )
 		end
 	end
 
-        return self
+	return self
 end
 
 -----------------------------
 -- MapDatabase Class
 -----------------------------
 
-function MapDatabase( path, is_preview, is_summary )
+function MapDatabase( path, is_preview, is_summary, algorithm )
 	local self = { }
 	local map_db = sqlite3.open( path, sqlite3.OPEN_READONLY )
 	local cache_db
-	local init_checksum = zlib.crc32
+	local init_checksum = ( { crc32 = zlib.crc32, adler32 = zlib.alder32 } )[ algorithm or "crc32" ]
 
 	if not map_db then
 		error( "Cannot open map database, aborting!" )
@@ -411,10 +447,6 @@ function MapDatabase( path, is_preview, is_summary )
 
 	self.disable_summary = function ( )
 		is_summary = false
-	end
-
-	self.change_algorithm = function ( algorithm )
-		init_checksum = ( { ["crc32"] = zlib.crc32, ["adler32"] = zlib.alder32 } )[ algorithm ]
 	end
 
 	self.create_cache = function ( use_memory, on_step )
@@ -480,7 +512,7 @@ function MapDatabase( path, is_preview, is_summary )
 			get_checksum = init_checksum( )
 		end
 
-                return function ( )
+		return function ( )
 			if stmt:step( ) ~= sqlite3.ROW then return end
 
 			if on_step then on_step( ) end
@@ -580,3 +612,7 @@ function MapDatabase( path, is_preview, is_summary )
 
 	return self
 end
+
+-----------------------------
+
+return helpers
